@@ -1,0 +1,1627 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# <a id='Top'></a> Wrangling Open Street Map Data  - Additional Information"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Table of Content\n",
+    "- [1 Introduction](#Intro)\n",
+    "- [2 Getting the Data](#GettingData)\n",
+    "    - [2.1 Loading the Data from Open Street Map](#LoadingData)\n",
+    "    - [2.2 Some Basic Descriptive Statistics](#BasicStatistics)\n",
+    "- [3 Wrangling the Data](#WranglingData)\n",
+    "    - [3.1 Auditing the Data](#AuditingData)\n",
+    "    - [3.2 Cleaning the Data](#CleaningData)\n",
+    "        - [3.2.1 Replace German Umlaute](#ReplaceUmlaute)\n",
+    "        - [3.2.2 Replace Abbreviations of Street](#ReplaceAbbrStr)\n",
+    "        - [3.2.3 Final Cleaning and Building of JSON-File](#FinalClean)\n",
+    "- [4 Importing the Data into MongoDB](#ImportingData)\n",
+    "- [5 Analyzing the Data with Pymongo](#Analyzing)\n",
+    "    - [5.1 Overview of the Data](#Overview)\n",
+    "    - [5.2 Other Ideas about the Data](#Ideas)\n",
+    "- [References](#References)\n",
+    "- [A Appendix](#Appendix)\n",
+    "    - [A.1 Import Modules](#ImportModules)\n",
+    "    - [A.2 Creating Sample Data File](#CreatingSampleData)\n",
+    "    - [A.3 Check for Umlaute](#CheckUmlaute)\n",
+    "    - [A.4 Printouts of Data Files](#Printouts)\n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <a id='Intro'></a> 1 Introduction"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This Notebook is part of the final project of the Udacity course **Data Wrangling with MongoDB**.\n",
+    "It acts as an additional document where I provide most of the code I used to answer the short questions of the corresponding doument **Wrangling OpenStreetMap Data with MongoDB**.\n",
+    "\n",
+    "*Note: To make this document more readable, I provided some larger code snippets in the Appendix. So if you intend to reproduce the code, keep in mind to run the code in the appendix A.1 and A.2 first.*\n",
+    "\n",
+    "<img style=\"float: left\" src=\"http://dl.dropboxusercontent.com/s/cm5ta8q4kmjkcbh/DirkKalmbach.png?dl=0\">"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <a id='GettingData'></a> 2 Getting the Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='LoadingData'></a>\n",
+    "### 2.1 Loading the Data from Open Street Map"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Downloading the map-file from [OpenStreetMap](http://www.openstreetmap.org/#map=14/50.7296/7.1118) was easy: I manually selected the city boundary of Bonn (1) and downloaded the xml-file via the _Overpass API_ (2):\n",
+    "<img src=\"ScreenshotOfMapDownload.png\">"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I downloaded the osm-file to a folder on my computer and named it `rawfile`:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I also created a smaller sample file of the `rawfile`. I used the code provided by the Instructor of the course.[[2]](#References) You'll find the code in the [appendix](#CreatingSampleData). I named this file `samplefile`. The following table gives you an overview of the different dataset I used throughout the data wrangling process:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Step | File | File Format | Name in Python | Type in Python| Description\n",
+    "--- | --- | --- | --- | ---\n",
+    "1a | bonn_osm.xml | xml |`rawfile`| str | OSM-Data of the city boundary of Bonn, Germany downloaded from OpenStreetMap\n",
+    "1b | sample.osm| xml | `samplefile`|str| Sample of `rawfile` (about 5%) produced in [A.2](#CreatingSampleData)\n",
+    "2 | wrangled_OSM.xml | xml | `outputfile`| str | Dataset produced during the cleaning-process\n",
+    "3 | wrangled_OSM.json | json | `data`| list | Cleaned Dataset in json-format ready for import into MongoDB (the file-path is stored in `path_to_data`"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "However, if you want to reproduce the code it might be helpful to change the file-paths to your personal need, e.g.: change the path of `rawfile` to your local download folder. You can do this by changing the following variables:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "rawfile = \"/Users/dirkkalmbach/Programming/Nanodegree/ud032/ud032_finalProject/data/bonn_osm.xml\"\n",
+    "outputfile = \"/Users/dirkkalmbach/Programming/Nanodegree/ud032/ud032_finalProject/data/wrangled_OSM.xml\"\n",
+    "path_to_data = \"/Users/dirkkalmbach/Programming/Nanodegree/ud032/ud032_finalProject/data/wrangled_OSM.json\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "_Keep in mind that `samplefile` will be produced automatically and stored in your iPython Home Directory._"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='BasicStatistics'></a>\n",
+    "### 2.3 Some Basic Descriptive Statistics"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Filesizes:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Size of Raw File: 173 MB\n",
+      "Size of Sample File: 8 MB\n"
+     ]
+    }
+   ],
+   "source": [
+    "def getSize(file):\n",
+    "    st = os.stat(file)\n",
+    "    return st.st_size/1024**2\n",
+    "\n",
+    "print(\"Size of Raw File: %d MB\" % (getSize(rawfile)) )\n",
+    "print(\"Size of Sample File: %d MB\" % (getSize(samplefile)) )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Count lines:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "2715967 number of lines in rafile\n",
+      "134575 number of lines in samplefile\n"
+     ]
+    }
+   ],
+   "source": [
+    "def getNumberOfLines(file):\n",
+    "    with open(file) as f:\n",
+    "        num_lines = sum(1 for line in f)\n",
+    "    return num_lines\n",
+    "\n",
+    "print(\"%d number of lines in rafile\" % (getNumberOfLines(rawfile)) )\n",
+    "print(\"%d number of lines in samplefile\" % (getNumberOfLines(samplefile)) )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Types of tags:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "*The following code is from Lesson **6-3 Iterative Parsing** gives an overview of all the tag-types in the xml-dataset:*"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{'bounds': 1,\n",
+      " 'member': 101575,\n",
+      " 'meta': 1,\n",
+      " 'nd': 986638,\n",
+      " 'node': 717260,\n",
+      " 'note': 1,\n",
+      " 'osm': 1,\n",
+      " 'relation': 2389,\n",
+      " 'tag': 601939,\n",
+      " 'way': 137789}\n",
+      "\n",
+      "--- Execution time: 3.322 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "\n",
+    "def count_tags(filename):\n",
+    "    tag_types = {}\n",
+    "    for event, elem in ET.iterparse(filename):\n",
+    "        \n",
+    "        if elem.tag in tag_types.keys():\n",
+    "            tag_types[elem.tag]+= 1\n",
+    "        else:\n",
+    "            tag_types[elem.tag]  = 1\n",
+    "    return tag_types\n",
+    "\n",
+    "tags = count_tags(file)\n",
+    "pprint.pprint(tags)\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <a id='WranglingData'></a> 3 Wrangling the Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a id='AuditingData'></a>  3.1 Auditing the Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "collapsed": true
+   },
+   "source": [
+    "In this section, I am looking for possible errors in the dataset to get an idea about what needs to be cleaned."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "RESULT FOR auditStrasse: \n",
+      "\n",
+      "Number of words containing 'Strasse' instead of 'Straße': 3\n",
+      "__________________________________________________ \n",
+      "\n",
+      "RESULT FOR auditK: (i.e.: list of all k-tags) \n",
+      "\n",
+      "Number of k-tags: 1208\n",
+      "Printing out the 20 most often occuring ..\n",
+      "[('building', 97193), ('addr:street', 55440), ('addr:housenumber', 54966), ('addr:city', 52773), ('addr:postcode', 49757), ('addr:country', 49456), ('highway', 37212), ('name', 20307), ('source', 20019), ('amenity', 7134), ('lit', 6700), ('maxspeed', 5209), ('foot', 4795), ('bicycle', 4658), ('access', 4293), ('service', 3942), ('ref', 3729), ('surface', 3601), ('barrier', 3418), ('oneway', 3343)]\n",
+      "__________________________________________________ \n",
+      "\n",
+      "RESULT FOR auditPos: (i.e.: all lat and lon out of range) \n",
+      "\n",
+      "Number of wrong latitude positions: 5438\n",
+      "Number of wrong longitude positions: 7032\n",
+      "Printing out first 20 latitude values ..\n",
+      "[50.7798168, 50.6445447, 50.6437195, 50.6418831, 50.6384231, 50.6366305, 50.6347091, 50.6331468, 50.6312489, 50.6302393, 50.6293082, 50.7745478, 50.7846916, 50.7832439, 50.7820479, 50.7829087, 50.7816577, 50.7810368, 50.7796285, 50.7787235]\n",
+      "Printing out first 20 longitude values ..\n",
+      "[7.0207407, 7.0194337, 7.0189245, 7.0186928, 7.0189586, 7.019269, 7.019805, 7.0202863, 7.0209736, 7.0205883, 7.0203549, 7.0200036, 7.0198694, 7.0196897, 7.0195328, 7.0196508, 7.0198828, 7.0203434, 7.0207255, 6.977695]\n",
+      "\n",
+      "--- Execution time: 3.825 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "result_auditStrasse = []\n",
+    "types_of_k_tags = {}\n",
+    "WrongPos = {'lat':[],'lon':[]}\n",
+    "\n",
+    "def auditStrasse(element):\n",
+    "    if element.get(\"v\"): #ensure that tag is not None\n",
+    "        \n",
+    "        if \"strasse\" in elem.get(\"v\") or \"Strasse\" in elem.get(\"v\"):\n",
+    "            \n",
+    "            if elem.get(\"v\").startswith(\"http\"): #check if URL\n",
+    "                pass\n",
+    "            else:\n",
+    "                return elem.get(\"v\")\n",
+    "                     \n",
+    "def auditK(element):\n",
+    "    if element.tag == \"tag\":\n",
+    "        k = element.get(\"k\")\n",
+    "        if k not in types_of_k_tags:\n",
+    "            types_of_k_tags[k]=1\n",
+    "        else:\n",
+    "            types_of_k_tags[k]+=1\n",
+    "            \n",
+    "def auditPos(element):\n",
+    "    pos=[None,None]\n",
+    "    if element.tag == \"node\" or element.tag == \"way\" :      \n",
+    "        node_dict = element.attrib\n",
+    "        \n",
+    "        if node_dict.has_key('lat'):\n",
+    "            lat = float(node_dict['lat'])\n",
+    "            if lat < 50.6460 or lat > 50.7738: #check latitudes out of range\n",
+    "                pos[0]=lat                        \n",
+    "            \n",
+    "        if node_dict.has_key('lon'):\n",
+    "            lon = float(node_dict['lon'])\n",
+    "            if lon < 7.0210 or lon > 7.2180: #check longitudes out of range\n",
+    "                pos[1]=lon\n",
+    "    \n",
+    "    return pos              \n",
+    "\n",
+    "with open(file) as f:\n",
+    "    for event, elem in ET.iterparse(f):\n",
+    "    #for event, elem in islice(ET.iterparse(f),0,100000):    \n",
+    "        if auditStrasse(elem):\n",
+    "            result_auditStrasse.append(auditStrasse(elem))\n",
+    "        \n",
+    "        auditK(elem)    \n",
+    "\n",
+    "        if auditPos(elem)[0] != None:          \n",
+    "            WrongPos['lat'].append(auditPos(elem)[0])\n",
+    "        if auditPos(elem)[1] != None:          \n",
+    "            WrongPos['lon'].append(auditPos(elem)[1])\n",
+    "\n",
+    "# Convert dict in ordered list:\n",
+    "# Ref: http://stackoverflow.com/a/7971655\n",
+    "ordered_k = sorted(types_of_k_tags.items(), reverse=True, key=lambda x:x[1])\n",
+    "    \n",
+    "print \"RESULT FOR auditStrasse:\",'\\n'\n",
+    "print (\"Number of words containing 'Strasse' instead of 'Straße': %d\" % (len(result_auditStrasse)) )\n",
+    "print \"__________________________________________________\",'\\n'\n",
+    "\n",
+    "print \"RESULT FOR auditK: (i.e.: list of all k-tags)\",'\\n'  \n",
+    "print (\"Number of k-tags: %d\" % (len(ordered_k)) )\n",
+    "print \"Printing out the 20 most often occuring ..\"\n",
+    "print ordered_k[0:20]\n",
+    "\n",
+    "print \"__________________________________________________\",'\\n'\n",
+    "print \"RESULT FOR auditPos: (i.e.: all lat and lon out of range)\",'\\n'  \n",
+    "print (\"Number of wrong latitude positions: %d\" % (len(WrongPos['lat'])) )\n",
+    "print (\"Number of wrong longitude positions: %d\" % (len(WrongPos['lon'])) )\n",
+    "print \"Printing out first 20 latitude values ..\"\n",
+    "print WrongPos['lat'][0:20]\n",
+    "print \"Printing out first 20 longitude values ..\"\n",
+    "print WrongPos['lon'][0:20]\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Checking for abbreviations of \"Strasse\":"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of street abbreviations: 170\n",
+      "Printing out first 10 ..\n",
+      "['v=\"Simrockstr.', 'v=\"Clemens-August-Str.', 'v=\"Hausdorffstr.', 'v=\"R\\xc3\\xb6ckumstr.', 'v=\"Prinz-Albert-Str.', 'v=\"R\\xc3\\xb6merstr.', 'v=\"Vorgebirgsstr.', 'Str.', 'v=\"K\\xc3\\xb6lnstr.', 'v=\"Verweyenstr.']\n",
+      "\n",
+      "--- Execution time: 0.181 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "results = []\n",
+    "\n",
+    "with open(file) as f:\n",
+    "    for lines in f:\n",
+    "        for word in lines.split():\n",
+    "            if word.endswith((\"Str.\", \"Str\", \"str.\", \"str\")):\n",
+    "                results.append(word)\n",
+    "\n",
+    "print (\"Number of street abbreviations: %d\" %len(results) )\n",
+    "print \"Printing out first 10 ..\"\n",
+    "print results[0:10]\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### <a id='CleaningData'></a>  3.2 Cleaning the Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### <a id='ReplaceUmlaute'></a> 3.2.1 Replace German Umlaute"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "--- Execution time: 0.926 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "umlaute = {'ä':\"ae\", 'ö':\"oe\", 'ü':\"ue\", 'Ä':\"Ae\", 'Ö':\"Oe\", 'Ü':\"Ue\", 'ß':\"ss\"}\n",
+    "\n",
+    "def replaceUmlaute(line):    \n",
+    "    for i in umlaute:\n",
+    "        line = line.replace(i,umlaute[i])\n",
+    "    return line\n",
+    "\n",
+    "with open(file) as infile:\n",
+    "    with open(outputfile,\"w\") as outfile:\n",
+    "        for line in infile:\n",
+    "            line_changed = replaceUmlaute(line)\n",
+    "            outfile.write(line_changed)\n",
+    "            \n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### <a id='ReplaceAbbrStr'></a> 3.2.2 Replace Abbreviations of Street"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "--- Execution time: 0.633 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "abbr = {'Str.':\"Strasse\", 'St':\"Strasse\", 'str.':\"strasse\", 'st':\"strasse\"}\n",
+    "\n",
+    "def replaceAbbr(line):\n",
+    "    for word in line.split():\n",
+    "        if word.endswith((\"Str.\", \"Str\", \"str.\", \"str\")):\n",
+    "            for i in abbr:\n",
+    "                new_word = word.replace(i, abbr[i])\n",
+    "                line = line.replace(word, new_word)\n",
+    "    return line\n",
+    "\n",
+    "with open(file) as infile:\n",
+    "    with open(outputfile,\"w\") as outfile:\n",
+    "        for line in infile:\n",
+    "            line_changed = replaceAbbr(line)\n",
+    "            outfile.write(line_changed)         \n",
+    "            \n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### <a id='FinalClean'></a> 3.2.3 Final Cleaning and Building of JSON-File"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "problemchars = re.compile(r'[=\\+/&<>;\\'\"\\?%#$@\\,\\. \\t\\r\\n]')\n",
+    "umlautchars = re.compile(r'[äöü]')\n",
+    "\n",
+    "def shape_element(element):\n",
+    "    node = {}\n",
+    "    if element.tag == \"node\" or element.tag == \"way\" :\n",
+    "        # A: Atrributes of node\n",
+    "        #####################################################################################\n",
+    "        node_dict = element.attrib #the whole node as an dict as a starting point for cleaning\n",
+    "        \n",
+    "        ##############################\n",
+    "        # UPDATE POSITION-INFORMATION:\n",
+    "        if ('lat' and 'lon') in node_dict:\n",
+    "            node_dict['pos'] = [ float(node_dict['lat']), float(node_dict['lon'])] #create new key\n",
+    "            del node_dict['lat'] #delete old entries\n",
+    "            del node_dict['lon'] #     \"        \n",
+    "        \n",
+    "        ##############################\n",
+    "        # Build entry 'created':\n",
+    "        node_dict['created'] = {\n",
+    "                                \"version\": node_dict['version'],\n",
+    "                                \"changeset\": node_dict['changeset'],\n",
+    "                                \"timestamp\": node_dict['timestamp'],\n",
+    "                                \"user\": node_dict['user'],\n",
+    "                                \"uid\": node_dict['uid']\n",
+    "                                }\n",
+    "        del node_dict['version']\n",
+    "        del node_dict['changeset']\n",
+    "        del node_dict['timestamp']\n",
+    "        del node_dict['user']\n",
+    "        del node_dict['uid']                 \n",
+    "        \n",
+    "        ##############################\n",
+    "        # Add 'type'-key:\n",
+    "        node_dict['type'] = element.tag\n",
+    "                        \n",
+    "        # B: Handle attribute k in <tag>\n",
+    "        #####################################################################################\n",
+    "        \n",
+    "        # B1: Add address-key:\n",
+    "        address_dict={}\n",
+    "      \n",
+    "        for i in element.iter('tag'):\n",
+    "            k = i.attrib['k']\n",
+    "            v = i.attrib['v']\n",
+    "            \n",
+    "            if problemchars.search(k):\n",
+    "                pass\n",
+    " \n",
+    "            else:\n",
+    "                #check for second colon:\n",
+    "                if k.count(':') >1:\n",
+    "                    pass\n",
+    "                else:\n",
+    "                    # check for address:\n",
+    "                    if k.startswith(\"addr:\"):\n",
+    "                        address_dict[k[5:]] = v\n",
+    "                    \n",
+    "        # B2: Add all other k:\n",
+    "                    else:\n",
+    "                        node_dict[k]=v\n",
+    "\n",
+    "        if address_dict:\n",
+    "            node_dict['address'] = address_dict\n",
+    "        \n",
+    "        nd_list = []\n",
+    "        for i in element.iter('nd'):   \n",
+    "            nd_list.append(i.attrib['ref'])\n",
+    "        \n",
+    "        if nd_list:\n",
+    "            node_dict['node_refs'] = nd_list\n",
+    "                \n",
+    "        node = node_dict\n",
+    "        \n",
+    "        return node\n",
+    "    \n",
+    "    else:\n",
+    "        return None"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "--- Execution time: 7.531 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Write the json-file while cleaning the data elment by element (-> ...)\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "\n",
+    "def process_map(file_in, pretty = False):\n",
+    "    data = []\n",
+    "    with codecs.open(path_to_data, \"w\") as fo:\n",
+    "        for _, element in ET.iterparse(file_in): \n",
+    "            el = shape_element(element)\n",
+    "            if el:\n",
+    "                data.append(el)\n",
+    "                if pretty:\n",
+    "                    fo.write(json.dumps(el, indent=2)+\"\\n\")\n",
+    "                else:\n",
+    "                    fo.write(json.dumps(el) + \"\\n\")\n",
+    "    return data\n",
+    "\n",
+    "data = process_map(outputfile)\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='ImportingData'></a>\n",
+    "## 4 Importing the Data into MongoDB"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Importing the data into MongoDB is straight forward. As recommended in the course, I did this via the terminal. Simply open a **new** terminal window *(Note: not in the Mongo shell)* and type:\n",
+    "\n",
+    "`mongoimport -db dbname -c collectionname --file filename.json`\n",
+    "\n",
+    "In my case I imported the data into collection _Bonn_ of the database _udacity_: \n",
+    "\n",
+    "`mongoimport -d udacity -c Bonn --file /Users/dirkkalmbach/Programming/Nanodegree/ud032/ud032_finalProject/data/wrangled_OSM.json`\n",
+    "\n",
+    "See also the following two screenshots:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<img src=\"Terminal_oben.png\">\n",
+    "<img src=\"Terminal_unten.png\">"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Checking if collection _Bonn_ was inserted in database _udacity_"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {
+    "collapsed": false,
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[u'twitter',\n",
+       " u'system.indexes',\n",
+       " u'twitter_sample',\n",
+       " u'cities',\n",
+       " u'Bonn',\n",
+       " u'Bonn_sample']"
+      ]
+     },
+     "execution_count": 18,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "client = MongoClient() #connet to MongoDB\n",
+    "db = client.udacity #choose database udacity\n",
+    "db.collection_names() #show collections in database udacity"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Basic Statistics of the Collection "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 121,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{u'count': 855049, u'ns': u'udacity.Bonn', u'ok': 1.0, u'lastExtentSize': 92585984, u'avgObjSize': 299, u'totalIndexSize': 27757520, u'systemFlags': 1, u'userFlags': 1, u'numExtents': 14, u'nindexes': 1, u'storageSize': 335900672, u'indexSizes': {u'_id_': 27757520}, u'paddingFactor': 1.0, u'size': 256466032}\n"
+     ]
+    }
+   ],
+   "source": [
+    "stats = db.command(\"collstats\", \"Bonn\")\n",
+    "print stats"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "_**Hint:** If these values (esp. the documents count) differ from the values in terminal, you might had already a collection with the same name in MongoDB and added the new collection (instead of replacing). In this case simply run `db.Bonn.drop()` either from Python or from the terminal._"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='Analyzing'></a>\n",
+    "## 5 Analyzing the Data with Pymongo"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='Overview'></a>\n",
+    "### 5.1 Overview of the Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Print out first document"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 131,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{u'_id': ObjectId('556c58812c799ca0e7b1211e'),\n",
+      " u'created': {u'changeset': u'27654675',\n",
+      "              u'timestamp': u'2014-12-23T16:46:12Z',\n",
+      "              u'uid': u'39774',\n",
+      "              u'user': u'MKnight',\n",
+      "              u'version': u'8'},\n",
+      " u'id': u'2702011',\n",
+      " u'pos': [50.7648601, 7.1292655],\n",
+      " u'type': u'node'}\n"
+     ]
+    }
+   ],
+   "source": [
+    "pprint.pprint( db.Bonn_sample.find_one() )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Size of the Collection"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 123,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Collection Size: 244 MB\n",
+      "Average Object Size: 299 bytes\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(\"Collection Size: %d MB\" %float(stats['size']/1024**2))\n",
+    "print(\"Average Object Size: %d bytes\" %float(stats['avgObjSize']))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Number of Nodes and Ways"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 124,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of Nodes: 717138\n",
+      "Number of Ways: 137777\n"
+     ]
+    }
+   ],
+   "source": [
+    "nodes = db.Bonn.find({\"type\":\"node\"}).count()\n",
+    "ways = db.Bonn.find({\"type\":\"way\"}).count()\n",
+    "print (\"Number of Nodes: %d\" %int(nodes))\n",
+    "print (\"Number of Ways: %d\" %int(ways))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Top 3 contributing user"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 170,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{u'ok': 1.0,\n",
+      " u'result': [{u'_id': u'ARWIE', u'count': 5555},\n",
+      "             {u'_id': u'dschuwa', u'count': 5504},\n",
+      "             {u'_id': u'dalchimsky', u'count': 4852}]}\n"
+     ]
+    }
+   ],
+   "source": [
+    "pprint.pprint(\n",
+    "    db.Bonn_sample.aggregate([\n",
+    "        {\"$group\":{\"_id\":\"$created.user\", \"count\":{\"$sum\":1}}},\n",
+    "        {\"$sort\":{\"count\":-1}},\n",
+    "        {\"$limit\":3}\n",
+    "    ]))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='Ideas'></a>\n",
+    "### 5.2 Other Ideas about the Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 432,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "192"
+      ]
+     },
+     "execution_count": 432,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#Create List of Points which I want to combine visually later \n",
+    "listOfPos = []\n",
+    "listOfLon = []\n",
+    "# Find Telephone-Boxes in Bonn:\n",
+    "query=db.Bonn.find({\"amenity\":\"telephone\"})\n",
+    "for entry in query:\n",
+    "    listOfPos.append(entry['pos'])\n",
+    "len(listOfPos)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "As this list is too long for visual representation, the following code choose 10 entries randomly:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 433,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[[50.7085078, 7.0829375],\n",
+       " [50.7045649, 7.1118186],\n",
+       " [50.6926997, 7.1505317],\n",
+       " [50.7718632, 7.2027152],\n",
+       " [50.657277, 7.1485925],\n",
+       " [50.7490659, 7.0490115],\n",
+       " [50.7278262, 7.1472209],\n",
+       " [50.7335018, 7.0871448],\n",
+       " [50.7339568, 7.0832515],\n",
+       " [50.6835659, 7.159277]]"
+      ]
+     },
+     "execution_count": 433,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#random.seed(5)\n",
+    "listOfPos = random.sample(listOfPos, 10)\n",
+    "listOfPos"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The following code seperates the long- and lat-values from the list:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 434,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "lat=[]\n",
+    "lon=[]\n",
+    "for i in range(0,len(listOfPos)):\n",
+    "    lat.append( listOfPos[i][0] )\n",
+    "for i in range(0,len(listOfPos)):\n",
+    "    lon.append( listOfPos[i][1] )"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Finally, we need a starting point, i.e.: a coordinate inside the city boundary from which we begin our _walk_. I decided to choose the coordinates of the __main station__,[[3]](#Station) as this is one of the most central places in Bonn and for many visitors a typical starting point."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 435,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "start=[50.731944,7.096944] #Position of Bonn Main Station"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We no can calculate the distances of all points to each other using euclidian distance measurement. Afterwards, we sort the lon-lat-coordinates in a list in order of drawing, i.e.: the first entry represents our starting point, the second entry represents the point nearest to the starting point, the third entry represents the nearest point to the last point, etc."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 436,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[[50.7335018, 7.0871448], [50.7339568, 7.0832515], [50.7085078, 7.0829375], [50.7045649, 7.1118186], [50.7278262, 7.1472209], [50.7490659, 7.0490115], [50.6926997, 7.1505317], [50.6835659, 7.159277], [50.657277, 7.1485925], [50.7718632, 7.2027152]]\n"
+     ]
+    }
+   ],
+   "source": [
+    "points = listOfPos\n",
+    "\n",
+    "orderedPoints = []\n",
+    "\n",
+    "def findNearPoint(startPoint,listOfPoints):\n",
+    "    dictOfDist={}\n",
+    "    order=0\n",
+    "    for i in listOfPoints:\n",
+    "        d= math.sqrt((startPoint[0]-i[0])**2 + (startPoint[1]-i[1])**2)\n",
+    "        dictOfDist[order]=d #add distance as value in dict\n",
+    "        order+=1\n",
+    "    index_of_d_min = min(dictOfDist, key=dictOfDist.get)\n",
+    "    return index_of_d_min\n",
+    "        \n",
+    "for i in range(1,len(points)+1):       \n",
+    "    x = findNearPoint(start,points)\n",
+    "    orderedPoints.append( points[x] )\n",
+    "    #listofPos.remove(listOfPos[x])\n",
+    "    del(points[x])\n",
+    "    \n",
+    "print orderedPoints"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Finally, we need to add our starting point (in our case the coordinates of the main station) to our list at the beginning:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 437,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "orderedPoints.insert(0,start)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now we can plot our graph. The blue point represents the main station, the red points represents the randomly selected telephone boxes, and the arrows shows the shortest way between the telephone boxes, starting from main station:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 438,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<matplotlib.figure.Figure at 0x1feb35450>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "#Subplot of 'red' points:          \n",
+    "plt.subplot(111)    \n",
+    "plt.plot(lat, lon, 'ro')\n",
+    "\n",
+    "#Subplot of 'blue' starting point:\n",
+    "plt.subplot(111)    \n",
+    "plt.plot(start[0], start[1], 'ro', color=\"b\", markersize =20)\n",
+    "\n",
+    "plt.title('Which Telephone Box is the next nearest?')\n",
+    "plt.ylabel('latitude')\n",
+    "plt.xlabel('longitude')\n",
+    "\n",
+    "#Draw arrows:\n",
+    "for i in range (0, len(orderedPoints)-1):\n",
+    "    plt.subplot(111)\n",
+    "    plt.annotate(\n",
+    "        '', xy=(orderedPoints[i]), #start\n",
+    "        xytext=(orderedPoints[i+1]), #end\n",
+    "        arrowprops={'arrowstyle': '<-'})"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <a id='References'></a>References"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "1. Link to open street map export api _(Warning: Click on the link downloads the osm-data (181.7 MB) instantly)_, [URL](http://overpass-api.de/api/map?bbox=7.0210,50.6460,7.2180,50.7738) <a id='1'></a>\n",
+    "\n",
+    "2. Code to create a smaller sample of the osm file, [URL](https://www.udacity.com/course/viewer/#!/c-nd002/l-3168208620/m-3189488621) <a id='2'></a>\n",
+    "\n",
+    "3. Link to the wikipedia page of _Bonn Hauptbahnhof_ (engl. Bonn Central Station), [URL](http://en.wikipedia.org/wiki/Bonn_Hauptbahnhof) <a id='3'></a>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <a id='Appendix'></a>Appendix"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='ImportModules'></a>\n",
+    "### A.1 Import Modules"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "import xml.etree.ElementTree as ET\n",
+    "import xml.etree.cElementTree as cET\n",
+    "from collections import defaultdict\n",
+    "import pprint\n",
+    "import re\n",
+    "import os\n",
+    "import math\n",
+    "import codecs\n",
+    "import json\n",
+    "import random\n",
+    "from pymongo import MongoClient\n",
+    "from itertools import islice\n",
+    "import timeit\n",
+    "import time\n",
+    "%matplotlib inline\n",
+    "import matplotlib.pyplot as plt"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='CreatingSampleData'></a>\n",
+    "### A.2 Creating a Sample Data File"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "--- Execution time: 2.146 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "#!/usr/bin/env python\n",
+    "# -*- coding: utf-8 -*-\n",
+    "\n",
+    "OSM_FILE = rawfile \n",
+    "samplefile = \"sample.osm\"\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "\n",
+    "def get_element(osm_file, tags=('node', 'way', 'relation')):\n",
+    "    \"\"\"Yield element if it is the right type of tag\n",
+    "\n",
+    "    Reference:\n",
+    "    http://stackoverflow.com/questions/3095434/inserting-newlines-in-xml-file-generated-via-xml-etree-elementtree-in-python\n",
+    "    \"\"\"\n",
+    "    context = ET.iterparse(osm_file, events=('start', 'end'))\n",
+    "    _, root = next(context)\n",
+    "    for event, elem in context:\n",
+    "        if event == 'end' and elem.tag in tags:\n",
+    "            yield elem\n",
+    "            root.clear()\n",
+    "\n",
+    "\n",
+    "with open(samplefile, 'wb') as output:\n",
+    "    output.write('<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n')\n",
+    "    output.write('<osm>\\n  ')\n",
+    "\n",
+    "    # Write every 20th top level element\n",
+    "    for i, element in enumerate(get_element(OSM_FILE)):\n",
+    "        if i % 20 == 0:\n",
+    "            output.write(ET.tostring(element, encoding='utf-8'))\n",
+    "\n",
+    "    output.write('</osm>')\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='CheckUmlaute'></a>\n",
+    "### A.3 Check for Umlaute"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "German Umlaute can be written in their substitute form (e.g. ä -> ae). The following code finds all occurences of ae, oe (=ö), ue (=ü) which are not part of urls or email-adresses:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "11055\n",
+      "['Bonn-Beuel', 'Bonn-Rheinaue', 'Bonn-Auerberg', 'Bonn-Auerberg', 'Bonn-Rheinaue']\n",
+      "\n",
+      "--- Execution time: 3.798 min ---\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Check for all Umlaute which are written in longform (i.e.: words containing 'ae', 'ue', ..)\n",
+    "\n",
+    "############################################################\n",
+    "# Comment/Uncomment the following two lines to choose \n",
+    "# whether you wants to run the code with Raw or Sample File:\n",
+    "file = rawfile\n",
+    "#file = samplefile\n",
+    "############################################################\n",
+    "\n",
+    "start_time = time.time() #start timer\n",
+    "\n",
+    "def findUmlaute(data):\n",
+    "    umlaute_longform = ['ae','ue','oe','Ae','Ue','Oe']\n",
+    "    result = []\n",
+    "    with open(data) as f:\n",
+    "        for event, elem in ET.iterparse(f):\n",
+    "        #for event,elem in islice(ET.iterparse(f),1,100):\n",
+    "            if elem.tag == \"tag\":\n",
+    "                v = elem.get(\"v\")\n",
+    "                for i in umlaute_longform:               \n",
+    "                    if i in v and i not in result: #check if umlaut in tag\n",
+    "                        if not v.startswith(\"http\"): #skip urls\n",
+    "                            if \"@\" not in v: #skip emails\n",
+    "                                result.append(v)  \n",
+    "    return result\n",
+    "\n",
+    "listOfUmlaute = findUmlaute(file)\n",
+    "print len( listOfUmlaute )\n",
+    "print listOfUmlaute[0:5]\n",
+    "\n",
+    "#CALCULATE & PRINTOUT EXECUTION TIME\n",
+    "execution_time = ( round((time.time() - start_time)/60,3) )\n",
+    "print '\\n',(\"--- Execution time: %s min ---\" %execution_time)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "_**Interpretation:** 11055 (in the Raw File) are too many results for manually checking!_"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<a id='Printouts'></a>\n",
+    "### A.4 Printouts of data-files"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The following code prints out the first 10 lines for every data file to help to evaluate the content of the files."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Printout for raw data (`rawfile` or `samplefile`)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+      "\n",
+      "<osm>\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"2702011\" lat=\"50.7648601\" lon=\"7.1292655\" timestamp=\"2014-12-23T16:46:12Z\" uid=\"39774\" user=\"MKnight\" version=\"8\" />\n",
+      "\n",
+      "  <node changeset=\"17711290\" id=\"11131978\" lat=\"50.6816238\" lon=\"7.1418429\" timestamp=\"2013-09-06T22:48:05Z\" uid=\"666059\" user=\"RobKehl\" version=\"9\" />\n",
+      "\n",
+      "  <node changeset=\"12132579\" id=\"11132149\" lat=\"50.6954366\" lon=\"7.1615631\" timestamp=\"2012-07-06T17:05:48Z\" uid=\"55687\" user=\"dschuwa\" version=\"10\">\n",
+      "\n",
+      "    <tag k=\"highway\" v=\"traffic_signals\" />\n",
+      "\n",
+      "  </node>\n",
+      "\n",
+      "  <node changeset=\"19547140\" id=\"11132452\" lat=\"50.7219667\" lon=\"7.1483583\" timestamp=\"2013-12-20T10:08:02Z\" uid=\"184969\" user=\"EvanE\" version=\"2\" />\n",
+      "\n",
+      "  <node changeset=\"22951609\" id=\"11132666\" lat=\"50.7242234\" lon=\"7.1647651\" timestamp=\"2014-06-15T20:13:14Z\" uid=\"2675\" user=\"Eckhart Wörner\" version=\"13\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "with open(samplefile) as f:\n",
+    "    for i in islice(f,0,10):\n",
+    "        print i"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Printout for ... (`outputfile`)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n",
+      "  <node changeset=\"27654675\" id=\"21185800\" lat=\"50.7693388\" lon=\"7.1426009\" timestamp=\"2014-12-23T16:46:11Z\" uid=\"39774\" user=\"MKnight\" version=\"6\" />\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "# use this with readline\n",
+    "for readline in islice(outputfile,0,10):\n",
+    "    print i"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### Printout for wrangled data (`data`)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{'created': {'changeset': '27654675',\n",
+      "             'timestamp': '2014-12-23T16:46:12Z',\n",
+      "             'uid': '39774',\n",
+      "             'user': 'MKnight',\n",
+      "             'version': '8'},\n",
+      " 'id': '2702011',\n",
+      " 'pos': [50.7648601, 7.1292655],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '9696743',\n",
+      "             'timestamp': '2011-10-30T18:29:52Z',\n",
+      "             'uid': '116044',\n",
+      "             'user': 'berndw',\n",
+      "             'version': '11'},\n",
+      " 'id': '2702022',\n",
+      " 'pos': [50.7654175, 7.137618],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '27362963',\n",
+      "             'timestamp': '2014-12-09T18:47:47Z',\n",
+      "             'uid': '1751908',\n",
+      "             'user': 'Blues Brothers',\n",
+      "             'version': '5'},\n",
+      " 'id': '2702027',\n",
+      " 'pos': [50.7704923, 7.1432462],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '18442764',\n",
+      "             'timestamp': '2013-10-19T22:50:43Z',\n",
+      "             'uid': '45243',\n",
+      "             'user': 'odna',\n",
+      "             'version': '10'},\n",
+      " 'id': '2703359',\n",
+      " 'pos': [50.7548501, 7.096464],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '12767394',\n",
+      "             'timestamp': '2012-08-17T21:13:31Z',\n",
+      "             'uid': '49785',\n",
+      "             'user': 'mike67',\n",
+      "             'version': '14'},\n",
+      " 'id': '2703367',\n",
+      " 'pos': [50.7533923, 7.0942377],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '12767394',\n",
+      "             'timestamp': '2012-08-17T21:13:31Z',\n",
+      "             'uid': '49785',\n",
+      "             'user': 'mike67',\n",
+      "             'version': '4'},\n",
+      " 'id': '2703368',\n",
+      " 'pos': [50.7530709, 7.0935736],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '12392812',\n",
+      "             'timestamp': '2012-07-20T21:25:45Z',\n",
+      "             'uid': '55687',\n",
+      "             'user': 'dschuwa',\n",
+      "             'version': '3'},\n",
+      " 'id': '2703372',\n",
+      " 'pos': [50.7515149, 7.0952592],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '12392812',\n",
+      "             'timestamp': '2012-07-20T21:25:45Z',\n",
+      "             'uid': '55687',\n",
+      "             'user': 'dschuwa',\n",
+      "             'version': '9'},\n",
+      " 'id': '2703373',\n",
+      " 'pos': [50.7517534, 7.0959917],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '7927491',\n",
+      "             'timestamp': '2011-04-21T17:37:47Z',\n",
+      "             'uid': '49785',\n",
+      "             'user': 'mike67',\n",
+      "             'version': '10'},\n",
+      " 'id': '2703378',\n",
+      " 'pos': [50.7554282, 7.0910601],\n",
+      " 'type': 'node'}\n",
+      "{'created': {'changeset': '17544383',\n",
+      "             'timestamp': '2013-08-27T20:42:15Z',\n",
+      "             'uid': '133419',\n",
+      "             'user': 'dachefte',\n",
+      "             'version': '7'},\n",
+      " 'id': '2703428',\n",
+      " 'pos': [50.7587324, 7.103913],\n",
+      " 'type': 'node'}\n"
+     ]
+    }
+   ],
+   "source": [
+    "for i in islice(data,0,10):\n",
+    "    pprint.pprint(i)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 2",
+   "language": "python",
+   "name": "python2"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 2
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython2",
+   "version": "2.7.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}
